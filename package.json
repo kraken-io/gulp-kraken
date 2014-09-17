@@ -1,0 +1,58 @@
+{
+  "name": "gulp-kraken",
+  "version": "0.0.1",
+  "description": "Gulp plugin to optimize all your images with the powerful Kraken.io API",
+  "main": "index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/kraken-io/gulp-kraken"
+  },
+  "scripts": {
+    "test": "mocha"
+  },
+  "files": [
+    "index.js"
+  ],
+  "author": {
+    "name": "Przemek Matylla",
+    "email": "pmatylla@kraken.io"
+  },
+  "keywords": [
+    "kraken",
+    "kraken-io",
+    "krakenio",
+    "image",
+    "img",
+    "picture",
+    "photo",
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "minify",
+    "minifier",
+    "compress"
+  ],
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "dependencies": {
+    "chalk": "^0.5.1",
+    "gulp-util": "^3.0.0",
+    "is-gif": "^1.0.0",
+    "is-jpg": "^1.0.0",
+    "is-png": "^1.0.0",
+    "kraken": "^0.2.0",
+    "pretty-bytes": "^1.0.1",
+    "request": "^2.40.0",
+    "through2": "^0.6.1"
+  },
+  "devDependencies": {
+    "mocha": "*"
+  },
+  "bugs": {
+    "url": "https://github.com/kraken-io/gulp-kraken/issues"
+  },
+  "homepage": "https://kraken.io"
+}
