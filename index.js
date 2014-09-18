@@ -32,7 +32,7 @@ module.exports = function (options) {
             return cb();
         }
 
-        var isSupported = isGIF(file.path) || !isPNG(file.path) || !isJPG(file.path);
+        var isSupported = isGIF(file.path) || isPNG(file.path) || isJPG(file.path);
 
         if (!isSupported) {
             gutil.log('gulp-kraken: Skipping unsupported image ' + chalk.blue(file.relative));
