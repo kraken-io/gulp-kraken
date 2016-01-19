@@ -43,7 +43,7 @@
     "is-gif": "^1.0.0",
     "is-jpg": "^1.0.0",
     "is-png": "^1.0.0",
-    "kraken": "^0.2.0",
+    "kraken": "^0.3.2",
     "pretty-bytes": "^1.0.1",
     "request": "^2.40.0",
     "through2": "^0.6.1"
