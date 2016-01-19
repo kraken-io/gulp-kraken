@@ -1,6 +1,6 @@
 {
   "name": "gulp-kraken",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Gulp plugin to optimize all your images with the powerful Kraken.io API",
   "main": "index.js",
   "license": "MIT",
