@@ -47,7 +47,8 @@ module.exports = function (options) {
         var opts = {
             file: file.path,
             lossy: options.lossy || false,
-            wait: true
+            wait: true,
+            resize: options.resize
         };
 
         kraken.upload(opts, function (data) {
