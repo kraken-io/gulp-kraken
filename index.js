@@ -1,12 +1,10 @@
-var through = require("through2"),
+var through = require("through2-concurrent"),
     request = require("request"),
     Kraken  = require("kraken"),
     pretty  = require("pretty-bytes"),
     gutil   = require("gulp-util"),
     chalk   = require("chalk"),
-    isGIF   = require("is-gif"),
-    isPNG   = require("is-png"),
-    isJPG   = require("is-jpg"),
+    path    = require("path"),
     fs      = require("fs");
 
 module.exports = function (options) {
@@ -22,7 +20,20 @@ module.exports = function (options) {
         files: 0
     };
 
-    return through.obj(function (file, enc, cb) {
+    var supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.svg'],
+        concurrency = options.concurrency || 4;
+
+    if (concurrency < 1) {
+        concurrency = 1;
+    }
+
+    if (concurrency > 16) {
+        concurrency = 16;
+    }
+
+    return through.obj({
+        maxConcurrency: concurrency
+    }, function (file, enc, cb) {
         if (file.isNull()) {
             return cb(null, file);
         }
@@ -32,7 +43,12 @@ module.exports = function (options) {
             return cb();
         }
 
-        var isSupported = !isGIF(file.path) || !isPNG(file.path) || !isJPG(file.path);
+        var isSupported = ~supportedExts.indexOf(path.extname(file.path).toLowerCase());
+
+        if (!isSupported) {
+            gutil.log("gulp-kraken: Skipping unsupported image " + chalk.blue(file.relative));
+            return cb(null, file);
+        }
 
         if (!isSupported) {
             gutil.log("gulp-kraken: Skipping unsupported image " + chalk.blue(file.relative));
@@ -46,7 +62,7 @@ module.exports = function (options) {
 
         var opts = {
             file: file.path,
-            lossy: options.lossy || false,
+            lossy: options.lossy || true,
             wait: true
         };
 
