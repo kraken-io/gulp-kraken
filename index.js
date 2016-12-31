@@ -62,7 +62,7 @@ module.exports = function (options) {
 
         var opts = {
             file: file.path,
-            lossy: options.lossy || true,
+            lossy: options.lossy === undefined ? false : options.lossy,
             wait: true
         };
 
