@@ -42,7 +42,7 @@
     "gulp-util": "^3.0.7",
     "kraken": "^0.3.3",
     "pretty-bytes": "^2.0.1",
-    "request": "^2.72.0",
+    "request": "^2.79.0",
     "through2-concurrent": "^1.1.1"
   },
   "devDependencies": {
