@@ -66,6 +66,10 @@ module.exports = function (options) {
             wait: true
         };
 
+        if(typeof options.quality !== 'undefined'){
+            opts.quality = options.quality;
+        }
+
         kraken.upload(opts, function (data) {
             if (!data.success) {
                 return cb(new gutil.PluginError("gulp-kraken:", data.message));
@@ -85,6 +89,7 @@ module.exports = function (options) {
 
             request(data.kraked_url, function (err) {
                 if (err) {
+                    gutil.log("gulp-kraken:", chalk.red("❌ ") + file.relative);
                     return cb(new gutil.PluginError("gulp-kraken:", err));
                 }
 
