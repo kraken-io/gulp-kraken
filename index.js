@@ -85,6 +85,7 @@ module.exports = function (options) {
 
             request(data.kraked_url, function (err) {
                 if (err) {
+                    gutil.log("gulp-kraken:", chalk.red("❌ ") + file.relative);
                     return cb(new gutil.PluginError("gulp-kraken:", err));
                 }
 
