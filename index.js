@@ -66,7 +66,11 @@ module.exports = function (options) {
             wait: true
         };
 
-        kraken.upload(opts, function (data) {
+        kraken.upload(opts, function (err, data) {
+			if(err) {
+				return cb(new gutil.PluginError("gulp-kraken:", err));
+			}
+			
             if (!data.success) {
                 return cb(new gutil.PluginError("gulp-kraken:", data.message));
             }
