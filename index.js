@@ -4,7 +4,8 @@ const Kraken = require("kraken");
 const log = require("fancy-log");
 const path = require("path");
 const fs = require("fs");
-const { blue, gray, green } = require("kleur");
+const util = require("util");
+const { red, blue, gray, green } = require("kleur");
 
 function pretty(num) {
 	const units = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
@@ -17,9 +18,17 @@ function pretty(num) {
 	return `${num.toFixed(1)} ${units[unitIndex]}`;
 }
 
-module.exports = function (options) {
-	options = options || {};
+async function downloadFile(url, destination) {
+	return new Promise((resolve, reject) => {
+		request(url)
+			.on("error", reject)
+			.pipe(fs.createWriteStream(destination))
+			.on("finish", resolve)
+			.on("error", reject);
+	});
+}
 
+module.exports = function (options = {}, errorCallback) {
 	if (!options.key || !options.secret) {
 		throw new Error("Please provide a valid Kraken API key and secret");
 	}
@@ -31,71 +40,60 @@ module.exports = function (options) {
 	};
 
 	const supportedExts = [".jpg", ".jpeg", ".png", ".gif", ".svg"];
-	let concurrency = options.concurrency || 4;
+	const concurrency = Math.min(16, Math.max(1, options.concurrency || 4));
 
-	concurrency = Math.min(16, Math.max(1, concurrency));
+	const stream = through.obj(
+		{ maxConcurrency: concurrency },
+		async function (file, enc, cb) {
+			try {
+				if (file.isNull()) return cb(null, file);
+				if (file.isStream()) throw new Error("Streaming not supported");
 
-	return through.obj(
-		{
-			maxConcurrency: concurrency,
-		},
-		function (file, enc, cb) {
-			if (file.isNull()) {
-				return cb(null, file);
-			}
-
-			if (file.isStream()) {
-				this.emit("error", new Error("Streaming not supported"));
-				return cb();
-			}
-
-			const isSupported = supportedExts.includes(
-				path.extname(file.path).toLowerCase()
-			);
-
-			if (!isSupported) {
-				log("Skipping unsupported image " + blue(file.relative));
-				return cb(null, file);
-			}
-
-			const kraken = new Kraken({
-				api_key: options.key,
-				api_secret: options.secret,
-			});
-
-			const opts = {
-				file: file.path,
-				lossy: options.lossy || true,
-				wait: true,
-			};
-
-			kraken.upload(opts, function (err, data) {
-				if (err || !data?.success) {
-					console.error("Kraken API Error: ", err);
-					return cb(new Error(data?.message || err?.message || err));
+				const isSupported = supportedExts.includes(
+					path.extname(file.path).toLowerCase()
+				);
+				if (!isSupported) {
+					log("Skipping unsupported image " + blue(file.relative));
+					return cb(null, file);
 				}
 
-				const { original_size, kraked_size, saved_bytes } = data;
-				const percent = ((saved_bytes * 100) / original_size).toFixed(2);
-				const msg =
-					saved_bytes > 0
-						? `saved ${pretty(saved_bytes)} - ${percent}%`
-						: "already optimized";
+				const kraken = new Kraken({
+					api_key: options.key,
+					api_secret: options.secret,
+				});
 
-				total.bytes += original_size;
-				total.kraked += kraked_size;
-				total.files++;
+				const opts = {
+					file: file.path,
+					lossy: options.lossy || true,
+					wait: true,
+				};
 
-				request(data.kraked_url, function (err) {
-					if (err) {
-						console.error("Kraken URL Error: ", err);
-						return cb(new Error(err));
+				kraken.upload(opts, async (err, data) => {
+					if (err || !data?.success) {
+						cb(new Error(data?.message || err?.message)); // Propagate the error to the stream
+						return;
 					}
+
+					const { original_size, kraked_size, saved_bytes } = data;
+					total.bytes += original_size;
+					total.kraked += kraked_size;
+					total.files++;
+
+					await downloadFile(data.kraked_url, file.path);
+					const msg =
+						saved_bytes > 0
+							? `saved ${pretty(saved_bytes)} - ${(
+									(saved_bytes * 100) /
+									original_size
+							  ).toFixed(2)}%`
+							: "already optimized";
 
 					log(green("✔ ") + file.relative + gray(` (${msg})`));
 					cb(null, file);
-				}).pipe(fs.createWriteStream(file.path));
-			});
+				});
+			} catch (error) {
+				cb(error);
+			}
 		},
 		function (cb) {
 			const percent = (
@@ -103,13 +101,21 @@ module.exports = function (options) {
 				total.bytes
 			).toFixed(2);
 			const savings = total.bytes - total.kraked;
-			let msg = `All done. Kraked ${total.files} image${
-				total.files === 1 ? "" : "s"
-			}`;
-			msg += gray(` (saved ${pretty(savings)} - ${percent}%)`);
-
-			log(msg);
+			log(
+				`All done. Kraked ${total.files} image${
+					total.files === 1 ? "" : "s"
+				} ${gray(`(saved ${pretty(savings)} - ${percent}%)`)}`
+			);
 			cb();
 		}
 	);
+
+	stream.on("error", (err) => {
+		log(red(`✖ ${err?.message}`));
+		if (typeof errorCallback === "function") {
+			errorCallback(err);
+		}
+	});
+
+	return stream;
 };
