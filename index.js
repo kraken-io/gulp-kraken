@@ -1,106 +1,121 @@
-var through = require("through2-concurrent"),
-    request = require("request"),
-    Kraken  = require("kraken"),
-    pretty  = require("pretty-bytes"),
-    gutil   = require("gulp-util"),
-    chalk   = require("chalk"),
-    path    = require("path"),
-    fs      = require("fs");
+const through = require("through2-concurrent");
+const request = require("request");
+const Kraken = require("kraken");
+const log = require("fancy-log");
+const path = require("path");
+const fs = require("fs");
+const util = require("util");
+const { red, blue, gray, green } = require("kleur");
 
-module.exports = function (options) {
-    options = options || {};
+function pretty(num) {
+	const units = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+	let unitIndex = 0;
 
-    if (!options.key || !options.secret) {
-        throw new gutil.PluginError("gulp-kraken", "Please provide a valid Kraken API key and secret");
-    }
+	while (num >= 1024 && ++unitIndex) {
+		num = num / 1024;
+	}
 
-    var total = {
-        bytes: 0,
-        kraked: 0,
-        files: 0
-    };
+	return `${num.toFixed(1)} ${units[unitIndex]}`;
+}
 
-    var supportedExts = ['.jpg', '.jpeg', '.png', '.gif', '.svg'],
-        concurrency = options.concurrency || 4;
+async function downloadFile(url, destination) {
+	return new Promise((resolve, reject) => {
+		request(url)
+			.on("error", reject)
+			.pipe(fs.createWriteStream(destination))
+			.on("finish", resolve)
+			.on("error", reject);
+	});
+}
 
-    if (concurrency < 1) {
-        concurrency = 1;
-    }
+module.exports = function (options = {}, errorCallback) {
+	if (!options.key || !options.secret) {
+		throw new Error("Please provide a valid Kraken API key and secret");
+	}
 
-    if (concurrency > 16) {
-        concurrency = 16;
-    }
+	const total = {
+		bytes: 0,
+		kraked: 0,
+		files: 0,
+	};
 
-    return through.obj({
-        maxConcurrency: concurrency
-    }, function (file, enc, cb) {
-        if (file.isNull()) {
-            return cb(null, file);
-        }
+	const supportedExts = [".jpg", ".jpeg", ".png", ".gif", ".svg"];
+	const concurrency = Math.min(16, Math.max(1, options.concurrency || 4));
 
-        if (file.isStream()) {
-            this.emit("error", new gutil.PluginError("gulp-kraken", "Streaming not supported"));
-            return cb();
-        }
+	const stream = through.obj(
+		{ maxConcurrency: concurrency },
+		async function (file, enc, cb) {
+			try {
+				if (file.isNull()) return cb(null, file);
+				if (file.isStream()) throw new Error("Streaming not supported");
 
-        var isSupported = ~supportedExts.indexOf(path.extname(file.path).toLowerCase());
+				const isSupported = supportedExts.includes(
+					path.extname(file.path).toLowerCase()
+				);
+				if (!isSupported) {
+					log("Skipping unsupported image " + blue(file.relative));
+					return cb(null, file);
+				}
 
-        if (!isSupported) {
-            gutil.log("gulp-kraken: Skipping unsupported image " + chalk.blue(file.relative));
-            return cb(null, file);
-        }
+				const kraken = new Kraken({
+					api_key: options.key,
+					api_secret: options.secret,
+				});
 
-        if (!isSupported) {
-            gutil.log("gulp-kraken: Skipping unsupported image " + chalk.blue(file.relative));
-            return cb(null, file);
-        }
+				const opts = {
+					file: file.path,
+					lossy: options.lossy || true,
+					wait: true,
+				};
 
-        var kraken = new Kraken({
-            api_key: options.key,
-            api_secret: options.secret
-        });
+				kraken.upload(opts, async (err, data) => {
+					if (err || !data?.success) {
+						cb(new Error(data?.message || err?.message)); // Propagate the error to the stream
+						return;
+					}
 
-        var opts = {
-            file: file.path,
-            lossy: options.lossy || true,
-            wait: true
-        };
+					const { original_size, kraked_size, saved_bytes } = data;
+					total.bytes += original_size;
+					total.kraked += kraked_size;
+					total.files++;
 
-        kraken.upload(opts, function (data) {
-            if (!data.success) {
-                return cb(new gutil.PluginError("gulp-kraken:", data.message));
-            }
+					await downloadFile(data.kraked_url, file.path);
+					const msg =
+						saved_bytes > 0
+							? `saved ${pretty(saved_bytes)} - ${(
+									(saved_bytes * 100) /
+									original_size
+							  ).toFixed(2)}%`
+							: "already optimized";
 
-            var originalSize = data.original_size,
-                krakedSize = data.kraked_size,
-                savings = data.saved_bytes;
+					log(green("✔ ") + file.relative + gray(` (${msg})`));
+					cb(null, file);
+				});
+			} catch (error) {
+				cb(error);
+			}
+		},
+		function (cb) {
+			const percent = (
+				((total.bytes - total.kraked) * 100) /
+				total.bytes
+			).toFixed(2);
+			const savings = total.bytes - total.kraked;
+			log(
+				`All done. Kraked ${total.files} image${
+					total.files === 1 ? "" : "s"
+				} ${gray(`(saved ${pretty(savings)} - ${percent}%)`)}`
+			);
+			cb();
+		}
+	);
 
-            var percent = (((savings) * 100) / originalSize).toFixed(2),
-                savedMsg = "saved " + pretty(savings) + " - " + percent + "%",
-                msg = savings > 0 ? savedMsg : "already optimized";
+	stream.on("error", (err) => {
+		log(red(`✖ ${err?.message}`));
+		if (typeof errorCallback === "function") {
+			errorCallback(err);
+		}
+	});
 
-            total.bytes += originalSize;
-            total.kraked += krakedSize;
-            total.files++;
-
-            request(data.kraked_url, function (err) {
-                if (err) {
-                    return cb(new gutil.PluginError("gulp-kraken:", err));
-                }
-
-                gutil.log("gulp-kraken:", chalk.green("✔ ") + file.relative + chalk.gray(" (" + msg + ")"));
-                cb(null, file);
-            }).pipe(fs.createWriteStream(file.path));
-        });
-    }, function (cb) {
-        var percent = (((total.bytes - total.kraked) * 100) / total.bytes).toFixed(2),
-            savings = total.bytes - total.kraked,
-            msg = "All done. Kraked " + total.files + " image";
-
-        msg += total.files === 1 ? "" : "s";
-        msg += chalk.gray(" (saved " + pretty(savings) + " - " + percent + "%)");
-
-        gutil.log("gulp-kraken:", msg);
-        cb();
-    });
+	return stream;
 };
